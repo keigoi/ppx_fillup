@@ -1,0 +1,10 @@
+(library
+ (name ppx_ty_test)
+ (public_name ppx_ty_test)
+ (kind ppx_rewriter)
+ (libraries
+  ppxlib
+  compiler-libs.common
+  )
+ (preprocess
+  (pps ppxlib.metaquot)))

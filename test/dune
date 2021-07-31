@@ -1,0 +1,3 @@
+(executable
+ (name test)
+ (preprocess (pps ppx_ty_test)))
