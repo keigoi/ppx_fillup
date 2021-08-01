@@ -6,3 +6,6 @@ let print_typed_expression env (texp:Typedtree.expression) =
       }
       ) in
     Format.eprintf "%a@." Ocaml_common.Printtyped.implementation str
+
+let print_typeexpr t =
+  Format.eprintf "%a@." Ocaml_common.Printtyp.type_expr t
