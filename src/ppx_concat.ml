@@ -70,4 +70,4 @@ let transform str =
 let () =
   Ppxlib.Driver.register_transformation 
     ~impl:transform
-    "ppx_ty_test"
+    "ppx_concat"
