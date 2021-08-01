@@ -1,6 +1,6 @@
 (library
- (name ppx_ty_test)
- (public_name ppx_ty_test)
+ (name ppx_concat)
+ (public_name ppx_concat)
  (kind ppx_rewriter)
  (libraries
   ppxlib
