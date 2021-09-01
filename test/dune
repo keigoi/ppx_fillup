@@ -1,3 +1,8 @@
 (executable
  (name test)
  (preprocess (pps ppx_fillup)))
+
+; treat warning 22 as non-error warning
+(env
+  (dev
+    (flags (:standard -warn-error -22))))

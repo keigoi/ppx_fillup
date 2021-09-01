@@ -10,9 +10,9 @@ let fields ?(loc=Location.none) typ =
     Option.some @@ List.map fst flds
   | Otyp_object (_, Some _) -> 
     None
-    (* error loc (Format.asprintf "object type is open: %a@." Ocaml_common.Printtyp.type_expr typ) *)
+    (* error loc (Format.asprintf "object type is open: %a" Ocaml_common.Printtyp.type_expr typ) *)
   | _ -> 
-    error loc (Format.asprintf "not an object type: %a@." Ocaml_common.Printtyp.type_expr typ)
+    error loc (Format.asprintf "not an object type: %a" Ocaml_common.Printtyp.type_expr typ)
 
 let make_method fld exp =
   Ast_helper.Cf.method_ (Location.mknoloc fld) Public (Cfk_concrete(Fresh, exp))
@@ -35,7 +35,7 @@ let concat (arg1, argtyp1) (arg2, argtyp2) =
     List.exists (fun x -> List.exists (fun y -> x=y) flds1) flds2 
   in
   if has_dup then
-    error arg2.pexp_loc (Format.asprintf "duplicate fields:%a@." Ocaml_common.Printtyp.type_expr argtyp2)
+    error arg2.pexp_loc (Format.asprintf "duplicate fields:%a" Ocaml_common.Printtyp.type_expr argtyp2)
   else begin
     let mths1 obj = List.map (fun f -> make_method f (make_call obj f)) flds1
     and mths2 obj = List.map (fun f -> make_method f (make_call obj f)) flds2
@@ -52,11 +52,13 @@ let concat (arg1, argtyp1) (arg2, argtyp2) =
           (mths1 [%expr obj1] @ mths2 [%expr obj2]))
   end
 
-let str_items mdecl =
-  match mdecl.Types.md_type with
-  | Mty_signature sg -> sg
-  | Mty_functor _ -> [] 
-  | _ -> assert false
+
+let hole ~loc = 
+  let hole : Parsetree.expression = 
+    let loc = Location.none in
+    [%expr (assert false)] 
+  in
+  {hole with pexp_attributes=[{attr_name={txt="HOLE"; loc=Location.none}; attr_loc=loc; attr_payload=PStr[]}]}
 
 let rec rettype env inst_ty =
   match (Ctype.repr @@ Ctype.expand_head env inst_ty).desc with
@@ -80,34 +82,30 @@ let check_is_typeclass env loc (typ_orig : Types.type_expr) =
       || List.exists (is_typeclass env) (abbrev_paths !abbrevs) then 
       ()
     else 
-      error loc (Format.asprintf "Not a typeclass:%a@." Ocaml_common.Printtyp.type_expr typ_orig);
+      error loc (Format.asprintf "Not a typeclass:%a" Ocaml_common.Printtyp.type_expr typ_orig);
   | _ -> 
-    error loc (Format.asprintf "Bad hole type:%a@." Ocaml_common.Printtyp.type_expr typ_orig)
+    error loc (Format.asprintf "Bad hole type:%a" Ocaml_common.Printtyp.type_expr typ_orig)
 
 
 let is_instance vdescr =
   List.exists (fun attr -> attr.Parsetree.attr_name.txt="instance") vdescr.Types.val_attributes
 
 type instance =
-  {base:Ident.t; args:instance list}
-
+  {base:Ident.t; args:unit list}
+  
 let rec make_instance env ty ident inst_ty =
   match (Ctype.repr @@ Ctype.expand_head env inst_ty) with
   | {Types.desc=Types.Tarrow(_, argty, retty,_);_} -> 
     check_is_typeclass env Location.none argty;
     let rest = make_instance env ty ident retty in
-    begin match resolve_instances argty env with
-    | [] -> 
-      error Location.none (Format.asprintf "Context instance not found:%a@." Ocaml_common.Printtyp.type_expr argty) 
-    | i::_ -> {rest with args= i::rest.args}
-    end
+    {rest with args= ()::rest.args}
   | _ ->
-    (* Todo: unify and search *)
     if Ctype.matches env ty inst_ty then
       {base=ident; args=[]}
     else
       raise Not_found
-and try_make_instance env ty ident descr =
+
+let try_make_instance env ty ident descr =
   if not @@ is_instance descr then
     None
   else
@@ -116,8 +114,14 @@ and try_make_instance env ty ident descr =
     with
       Not_found ->
         None
-and resolve_instances ty env =
-  let rec find_instances = function
+
+let print_tab lvl =
+  for _i = 0 to lvl do
+    print_string "  "
+  done
+
+let resolve_instances ty env =
+  let rec find_instances lvl = function
   | Env.Env_empty -> []
   | Env_extension (s, _, _)
   | Env_modtype (s, _, _)
@@ -130,50 +134,80 @@ and resolve_instances ty env =
   | Env_copy_types s
   | Env_persistent (s, _)
   | Env_value_unbound (s, _, _)
-  | Env_module_unbound (s, _, _) -> find_instances s
+  | Env_module_unbound (s, _, _) -> find_instances lvl s
   | Env_value (s, ident, descr) ->
-    (* print_endline @@ Ident.name ident;
-    List.iter (fun attr -> print_endline @@ attr.Parsetree.attr_name.txt) descr.val_attributes; *)
+    (* print_tab lvl;
+    print_endline @@ Ident.name ident; *)
     begin match try_make_instance env ty ident descr with
-    | Some i -> i :: find_instances s
-    | _ -> find_instances s
+    | Some i -> i :: find_instances lvl s
+    | _ -> find_instances lvl s
     end
   | Env_open (s, path) ->
+      let str_items mdecl =
+        match mdecl.Types.md_type with
+        | Mty_signature sg -> sg
+        | Mty_functor _ -> [] 
+        | _ -> assert false
+      in
+      let lvl = lvl + 1 in
+      let rest = find_instances lvl s in
+      (* print_tab lvl;
+      print_endline @@ "module: " ^ Path.name path; *)
       let md = Env.find_module path env in
       List.fold_left (fun res -> function
         | Types.Sig_value (ident, descr, _) ->
-          (* print_endline @@ Ident.name ident;
-          List.iter (fun attr -> print_endline @@ attr.Parsetree.attr_name.txt) descr.val_attributes; *)
+          (* print_tab lvl;
+          print_endline @@ "  " ^ Ident.name ident; *)
           begin match try_make_instance env ty ident descr with
-          | Some i -> i :: find_instances s
-          | _ -> find_instances s
+          | Some i -> i :: res
+          | _ -> res
           end
         | _ -> res)
-        (find_instances s) (str_items md)
+        rest (str_items md)
   in
-  find_instances (Env.summary env)
+  find_instances 0 (Env.summary env)
 
-let rec gen_instance loc inst =
-  (* print_endline @@ "gen_instance:"^Ident.name inst.base; *)
+let mark_as_filled exp : Parsetree.expression =
+  let attr = {
+    Parsetree.attr_name={txt="FILLED";loc=Location.none}; 
+    attr_payload=PStr[]; 
+    attr_loc=Location.none
+    } 
+  in
+  {exp with pexp_attributes=attr::exp.Parsetree.pexp_attributes}
+
+let gen_instance loc inst =
   let base =
     Ast_helper.Exp.ident (Location.mknoloc (Longident.Lident (Ident.name inst.base)))
   in
   match inst.args with
-  | [] -> {base with pexp_loc=loc}
+  | [] -> 
+    mark_as_filled @@ {base with pexp_loc=loc}
   | _::_ ->
+    mark_as_filled @@
     Ast_helper.Exp.apply
       ~loc 
       base
-      (List.map (fun x -> (Asttypes.Nolabel, gen_instance Location.none x)) inst.args)
+      (List.map (fun () -> (Asttypes.Nolabel, hole ~loc)) inst.args)
+
+let rec remove_attrs exp =
+  match exp with
+  | {Parsetree.pexp_desc=Pexp_apply(f, args); _} ->
+    let args = List.map (fun (l,e) -> (l, remove_attrs e)) args in
+    {exp with pexp_desc=Pexp_apply(remove_attrs f, args); pexp_attributes=[]}
+  | _ -> 
+    {exp with pexp_attributes=[]}
 
 let instrument_concat (super:Untypeast.mapper) =
   fun (self:Untypeast.mapper) (texp : Typedtree.expression) ->
     match texp with
-    | {exp_attributes=[{Parsetree.attr_name={txt="HOLE";_};_}];_} ->
+    | {exp_attributes=[{Parsetree.attr_name={txt="HOLE"; _}; attr_loc=attr_loc; _}];_} ->
       check_is_typeclass texp.exp_env texp.exp_loc texp.exp_type;
       begin match resolve_instances texp.exp_type texp.exp_env with
-      | [] -> error texp.exp_loc (Format.asprintf "Instance not found:%a@." Ocaml_common.Printtyp.type_expr texp.exp_type)
-      | inst::_ ->  gen_instance texp.exp_loc inst
+      | [] -> 
+          error attr_loc (Format.asprintf "Instance not found: %a" Ocaml_common.Printtyp.type_expr texp.exp_type)
+      | inst::_ ->  
+          gen_instance texp.exp_loc inst
       end
     | {exp_desc=Texp_apply({exp_desc=Texp_ident(_,{txt=Lident("concat");_},_);_}, 
         [(_lab1, Some arg1);
@@ -190,20 +224,55 @@ let instrument_concat (super:Untypeast.mapper) =
     | _ -> 
       super.expr self texp
 
-let hole : Parsetree.expression = 
-  let loc = Location.none in
-  [%expr (assert false)[@HOLE]] 
-  
-let replace_hashhash_with_hole (super:Ast_mapper.mapper) (self:Ast_mapper.mapper) (exp:Parsetree.expression) =
-  match exp.pexp_desc with
-  | Pexp_apply(
+
+let mark_alert loc exp : Parsetree.expression =
+  let expstr = 
+    let exp' = remove_attrs exp in
+    Format.asprintf "Filled: (%a)" Ocaml_common.Pprintast.expression exp' 
+  in
+  let payload : Parsetree.expression = 
+    Ast_helper.Exp.constant (Ast_helper.Const.string expstr)
+  in
+  let attr = {
+    Parsetree.attr_name={txt="ppwarning";loc=Location.none}; 
+    attr_payload=PStr[{pstr_desc=Pstr_eval(payload,[]); pstr_loc=loc}]; 
+    attr_loc=Location.none
+    } 
+  in
+  {exp with pexp_attributes=attr::exp.Parsetree.pexp_attributes}
+      
+
+(* replace ## with hole *)
+let replace_hashhash_with_holes (exp:Parsetree.expression) =
+  match exp with
+  | {pexp_desc=Pexp_apply(
       {pexp_desc=Pexp_ident({txt=Lident("##"); _}); pexp_loc=loc_hole; _}, 
       [(_, arg1); (_, arg2)]
-    ) -> 
-      Ast_helper.Exp.apply ~loc:exp.pexp_loc ~attrs:exp.pexp_attributes 
-        arg1 
-        [(Nolabel, {hole with pexp_loc=loc_hole}); (Nolabel, arg2)]
-  | _ -> super.expr self exp
+    ); _} -> 
+      Option.some @@
+        Ast_helper.Exp.apply ~loc:exp.pexp_loc ~attrs:exp.pexp_attributes 
+          arg1 
+          [(Nolabel, {(hole ~loc:loc_hole) with pexp_loc=loc_hole}); (Nolabel, arg2)]
+  | _ -> 
+    None
+
+(* annotate filled nodes with alerts *)
+let annotate_filled (exp:Parsetree.expression) =
+  match exp with
+  | {pexp_desc=_; pexp_attributes={attr_name={txt="FILLED";_};_}::attrs;_} ->
+    Option.some @@
+      mark_alert exp.pexp_loc {exp with pexp_attributes=attrs}
+  | _ -> 
+    None
+
+let make_expr_mapper f =
+  let super = Ast_mapper.default_mapper in
+  let f' self exp =
+    match f exp with
+    | Some exp -> exp
+    | None -> super.expr self exp
+  in
+  {super with expr = f'}
 
 let new_env () =
   Compmisc.init_path (); 
@@ -211,42 +280,25 @@ let new_env () =
       
 let transform str =
     let str = 
-      let super = Ast_mapper.default_mapper in
-      let mapper = {super with expr = replace_hashhash_with_hole super} in
+      let mapper = make_expr_mapper replace_hashhash_with_holes in
       mapper.structure mapper str
     in
     let env = new_env () in
     let (tstr, _, _, _) = Typemod.type_structure env str in
-  let str =
+    let str =
       let super = Untypeast.default_mapper in
       let untyper = {super with expr = instrument_concat super} in
       untyper.structure untyper tstr  
     in
     str
 
-let f (exp:Parsetree.expression) =
-  match exp.pexp_desc with
-  | Parsetree.Pexp_ident _ |Parsetree.Pexp_constant _ |Parsetree.Pexp_let(_, _, _) 
-  | Parsetree.Pexp_function _ |Parsetree.Pexp_fun (_, _, _, _)
-    |Parsetree.Pexp_apply (_, _) |Parsetree.Pexp_match (_, _) |Parsetree.Pexp_try
-                                                                 (_, _) |Parsetree.Pexp_tuple _ |Parsetree.Pexp_construct (_, _)
-    |Parsetree.Pexp_variant (_, _) |Parsetree.Pexp_record (_, _)
-    |Parsetree.Pexp_field (_, _) |Parsetree.Pexp_setfield (_, _, _)
-    |Parsetree.Pexp_array _ |Parsetree.Pexp_ifthenelse (_, _, _)
-    |Parsetree.Pexp_sequence (_, _) |Parsetree.Pexp_while (_, _)
-    |Parsetree.Pexp_for (_, _, _, _, _) |Parsetree.Pexp_constraint (_, _)
-    |Parsetree.Pexp_coerce (_, _, _) |Parsetree.Pexp_send (_, _)
-    |Parsetree.Pexp_new _ |Parsetree.Pexp_setinstvar (_, _)
-    |Parsetree.Pexp_override _ |Parsetree.Pexp_letmodule (_, _, _)
-    |Parsetree.Pexp_letexception (_, _) |Parsetree.Pexp_assert _
-    |Parsetree.Pexp_lazy _ |Parsetree.Pexp_poly (_, _) |Parsetree.Pexp_object _
-    |Parsetree.Pexp_newtype (_, _) |Parsetree.Pexp_pack _ |Parsetree.Pexp_open
-                                                             (_, _) |Parsetree.Pexp_letop _ |Parsetree.Pexp_extension _
-    |Parsetree.Pexp_unreachable -> assert false
-
 let rec loop f str =
   let str' = f str in
   if str=str' then
+    let str = 
+      let mapper = make_expr_mapper annotate_filled in
+      mapper.structure mapper str
+    in
     str
   else
     loop f str'
