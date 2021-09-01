@@ -1,6 +1,6 @@
 (library
- (name ppx_concat)
- (public_name ppx_concat)
+ (name ppx_fillup)
+ (public_name ppx_fillup)
  (kind ppx_rewriter)
  (libraries
   ppxlib
