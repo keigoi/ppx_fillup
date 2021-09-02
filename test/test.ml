@@ -1,5 +1,7 @@
 
-type 'a show = {show:'a -> string}[@@typeclass]
+type 'a show = {show:'a -> string}
+[@@typeclass]
+
 
 module M = struct
   let _str[@instance] = {show=(fun x -> Printf.sprintf "\"%s\"" x)}
@@ -18,22 +20,9 @@ let () =
   ;
   print_endline @@ show ## (1, "abc")
   (* ;
+  List.iter ## [1;2;3] *)
+  (* ;
   print_endline @@ show ## (1, true) *)
-
-
-(* object concatenation (experimental) *)
-
-let concat (_: < .. >) (_: < .. >) : < .. > = 
-  failwith "Impossible: This must not be called"
-
-(* <a:unit; b:unit> *)
-let ab = 
-  concat
-    (object method a = () end) 
-    (object method b = () end)
-
-(* let () = List.iter ## [1;2;3]
-let () = List.iter ## [(fun x -> x+1)]  *)
 
 type t = T of int[@@typeclass]
 type u = U of int[@@typeclass]
@@ -46,11 +35,27 @@ let inst[@instance] = fun (_x:t) -> print_endline "called"; (U 1)
 let f (U(x)) y z = x + y + z
 let _ = f ## 1 2
 
+(* object concatenation (experimental) *)
+
+type ('lr,'l,'r) disj = {concat:'l -> 'r -> 'lr}
+[@@typeclass]
+[@@disjoint_objects: 'l * 'r -> 'lr]
+
+let concat disj x y =
+  disj.concat x y
+
+(* <a:unit; b:unit> *)
+let ab = 
+  concat ##
+    (object method a = () end) 
+    (object method b = () end)
+
 let abc =
   concat
+    ##
     ab
     (object method c = () end)
-    
+
 let duck =
   object
     method quack = "quack"
@@ -63,7 +68,7 @@ let cow =
 
 (* <moo:string; quack:string> *)
 let duckcow =
-  concat duck cow
+  concat ## duck cow
 (* 
 let obj1 = duck
   and obj2 = cow in
@@ -83,7 +88,7 @@ let bool =
   end
 
 (* <of_bool: bool -> string; of_int: int -> string; to_bool: string -> bool; to_int: string->int> *)
-let intbool = concat int bool
+let intbool = concat ## int bool
 (* 
 let intbool =
   let obj1 = int
