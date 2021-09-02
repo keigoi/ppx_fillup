@@ -1,3 +1,5 @@
+(* don't make preprocessor warnings as errors *)
+[@@@warnerror "-22"]
 
 type 'a show = {show:'a -> string}
 [@@typeclass]
@@ -31,13 +33,15 @@ let inst2[@instance] = T 1
 
 let inst[@instance] = fun (_x:t) -> print_endline "called"; (U 1)
 
-
 let f (U(x)) y z = x + y + z
 let _ = f ## 1 2
 
 (* object concatenation (experimental) *)
 
-type ('lr,'l,'r) disj = {concat:'l -> 'r -> 'lr}
+type ('lr,'l,'r) disj = {
+  concat:'l -> 'r -> 'lr;
+  split:'lr -> 'l * 'r;
+}
 [@@typeclass]
 [@@disjoint_objects: 'l * 'r -> 'lr]
 
@@ -45,16 +49,10 @@ let concat disj x y =
   disj.concat x y
 
 (* <a:unit; b:unit> *)
-let ab = 
-  concat ##
-    (object method a = () end) 
-    (object method b = () end)
+let ab = concat ## (object method a = () end) (object method b = () end)
 
 let abc =
-  concat
-    ##
-    ab
-    (object method c = () end)
+  concat ## ab (object method c = () end)
 
 let duck =
   object

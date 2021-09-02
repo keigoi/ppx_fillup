@@ -60,7 +60,7 @@ let fields typ =
     (* error loc (Format.asprintf "object type is open: %a" Ocaml_common.Printtyp.type_expr typ) *)
   | _ -> 
     raise Pending
-    (* error loc (Format.asprintf "not an object type: %a" Ocaml_common.Printtyp.type_expr typ) *)
+    (* error Location.none (Format.asprintf "not an object type: %a" Ocaml_common.Printtyp.type_expr typ) *)
 
 exception Not_applicable
 
@@ -78,6 +78,7 @@ let generate_concatenator_body loc argmap domvars =
   @@ List.concat_map make_fields domvars
 
 let generate_concatenator loc (domvars,rngvar) argmap fldtype =
+  prerr_endline "concatenator";
   let rec loop rest typ =
     match typ.Types.desc with
     | Tarrow(_, argtype, rettype, _) -> 
@@ -96,22 +97,65 @@ let generate_concatenator loc (domvars,rngvar) argmap fldtype =
         generate_concatenator_body loc argmap domvars
     | Tpoly(typ,_) | Tsubst(typ) | Tlink(typ) ->
       loop rest typ
-    |Types.Tvar _ 
-    |Types.Ttuple _ |Types.Tconstr (_, _, _) |Types.Tobject (_, _) |Types.Tfield (_, _, _, _) |Types.Tnil
-    |Types.Tvariant _ |Types.Tunivar _
-    |Types.Tpackage (_, _, _) ->
+    | _ ->
       error loc 
         (Format.asprintf "Field type (%a) is not an arrow type: %a" 
           Ocaml_common.Printtyp.type_expr fldtype 
           Ocaml_common.Printtyp.type_expr typ)
   in loop domvars fldtype
 
+let generate_splitter_body loc rngvar typ =
+  let fields =
+    match fields typ with
+    | Some flds -> 
+      List.map (fun fld -> Util.make_method fld (Util.make_call (Util.mk_var rngvar) fld)) flds
+    | None -> 
+      error loc (Format.asprintf "Concatenator's inferred parameter type is not an object: %a" Ocaml_common.Printtyp.type_expr typ)
+  in
+  Ast_helper.Exp.object_ @@ Ast_helper.Cstr.mk [%pat? _] fields
+  
+let generate_splitter loc (domvars,rngvar) argmap fldtype =
+  prerr_endline "splitter";
+  let rec make_tuples (typ:Types.type_expr) =
+    match typ.desc with
+    | Tvar(Some(var)) ->
+      if not @@ List.mem var domvars then
+        error loc
+          (Format.asprintf "Return type ('%s) is not in the argument list ('%a): " var (Format.pp_print_list Format.pp_print_string) domvars)
+      else
+        generate_splitter_body loc rngvar (List.assoc var argmap)
+    | Ttuple(typs) ->
+      Ast_helper.Exp.tuple (List.map make_tuples typs)
+    | Tpoly(typ,_) | Tsubst(typ) | Tlink(typ) ->
+      make_tuples typ
+    | _ ->
+      error loc (Format.asprintf "Splitter return type must be tuple or typevar: %a" Ocaml_common.Printtyp.type_expr typ)
+  in
+  match fldtype.Types.desc with
+  | Tarrow(_, argtype, rettype, _) -> 
+    let argvar = Util.tyvar loc argtype in
+    if rngvar <> argvar then
+      raise Not_applicable
+    else
+    let open Parsetree in let open Ast_helper in
+    [%expr fun [%p Pat.var @@ Location.mknoloc argvar] -> [%e make_tuples rettype]]
+  | _ ->
+    error loc 
+      (Format.asprintf "Field type is not an arrow type: %a" 
+        Ocaml_common.Printtyp.type_expr fldtype)
+
+
 let generate_concatenator_or_splitter loc deps argmap fldtype =
   try 
     generate_concatenator loc deps argmap fldtype
   with
   | Not_applicable -> 
-    error loc (Format.asprintf "Cannot generate from disjoint instance field type: %a" Ocaml_common.Printtyp.type_expr fldtype)
+    begin try
+      generate_splitter loc deps argmap fldtype
+    with
+    | Not_applicable ->
+      error loc (Format.asprintf "Cannot generate from disjoint instance field type: %a" Ocaml_common.Printtyp.type_expr fldtype)
+    end
 
 
 let fill_holes_disjoint loc env (texp: Typedtree.expression) =
