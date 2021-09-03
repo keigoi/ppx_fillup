@@ -3,12 +3,6 @@ Printexc.record_backtrace true
 
 let error = Util.error
 
-let (let+) = Option.bind
-let (and+) x y =
-  match x, y with
-  | Some x, Some y -> Some (x,y)
-  | _ -> None
-
 let fill_holes (texp : Typedtree.expression) =
   match texp with
   | {exp_attributes=[{Parsetree.attr_name={txt="HOLE"; _}; attr_loc=attr_loc; _}];_} ->
@@ -18,8 +12,9 @@ let fill_holes (texp : Typedtree.expression) =
     begin match Concat.fill_holes_disjoint texp.exp_loc texp.exp_env texp with
     | Some exp -> 
       Some (Util.mark_as_filled texp.exp_loc exp)
-    | exception Concat.Pending ->
-      Some (Util.hole ~loc:texp.exp_loc)
+    | exception (Concat.Pending (loc, str)) ->
+      prerr_endline str;
+      Some (Util.hole ~loc:loc)
     | None ->
       begin match Typeclass.resolve_instances texp.exp_type texp.exp_env with
       | [] -> 

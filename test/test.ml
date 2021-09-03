@@ -54,6 +54,16 @@ let ab = concat ## (object method a = () end) (object method b = () end)
 let abc =
   concat ## ab (object method c = () end)
 
+let aabc = 
+  concat ## (object method outer = ab end) (object method outer = object method c = () end end)
+
+let concatenator l r =
+  object method outer = object method a = l#outer#a method b = l#outer#b method c = r#outer#c end end
+
+let splitter lr =
+  object method outer = object method a = lr#outer#a method b = lr#outer#b end end,
+  object method outer = object method a = lr#outer#c end end
+
 let duck =
   object
     method quack = "quack"
