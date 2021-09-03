@@ -60,6 +60,28 @@ let list_of_opt = function
   | Some x -> [x]
   | None -> []
 
+(**
+generate_projection: generate a concatenated/splitted object.
+
+Assume that we have <outer: <a: unit; b:unit>> and <outer: <c:unit>>.
+
+A concatenated object would be:
+
+  object method outer = object method a = l#outer#a method b = l#outer#b method c = r#outer#c end end
+
+via from=None and onto=None.
+
+For splitted objects:
+
+  object method outer = object method a = lr#outer#a method b = lr#outer#b end end
+
+via from=Some lr and onto=Some l, and
+
+  object method outer = object method a = lr#outer#c end end
+
+via from=Some lr and onto=Some r.
+*)
+
 let generate_projection loc ?from ?onto subst' =
   let rec loop nests0 subst0 =
     let subst = List.map (fun (domvar,typ) -> domvar, field_types loc typ) subst0 in
