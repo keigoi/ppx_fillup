@@ -3,12 +3,13 @@
 let error loc (s:string) =
   Location.raise_errorf ~loc "%s" s
 
-let hole ~loc = 
+let hole ?(inner=false) loc =
   let hole : Parsetree.expression = 
     let loc = loc in
     [%expr (assert false)] 
   in
-  {hole with pexp_attributes=[{attr_name={txt="HOLE"; loc=Location.none}; attr_loc=loc; attr_payload=PStr[]}]}
+  let attr = if inner then "HOLE_inner" else "HOLE" in
+  {hole with pexp_attributes=[{attr_name={txt=attr; loc=Location.none}; attr_loc=loc; attr_payload=PStr[]}]}
 
 let expand_type env typ =
   Ctype.repr (Ctype.expand_head env typ)
@@ -57,11 +58,10 @@ let make_expr_mapper f str =
 
 let make_expr_mapper' f str =
   let super = Ast_mapper.default_mapper in
-  let mapper = {super with expr = (f super)} in
+  let mapper = {super with expr = (f ~super)} in
   mapper.structure mapper str
 
 let mark_as_filled loc exp : Parsetree.expression =
-  (* prerr_endline (Format.asprintf "Filled: %a" Ocaml_common.Pprintast.expression exp); *)
   let attr = {
     Parsetree.attr_name={txt="FILLED";loc=Location.none}; 
     attr_payload=PStr[]; 

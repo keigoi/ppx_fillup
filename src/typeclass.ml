@@ -103,4 +103,4 @@ let gen_instance loc inst =
   | _::_ ->
     Ast_helper.Exp.apply
       base
-      (List.map (fun () -> (Asttypes.Nolabel, Util.hole ~loc)) inst.args)
+      (List.map (fun () -> (Asttypes.Nolabel, Util.hole ~inner:true loc)) inst.args)

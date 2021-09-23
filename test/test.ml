@@ -30,10 +30,10 @@ type t = T of int[@@typeclass]
 type u = U of int[@@typeclass]
 
 let inst2[@instance] = T 1
-
 let inst[@instance] = fun (_x:t) -> print_endline "called"; (U 1)
 
 let f (U(x)) y z = x + y + z
+let _ = f ## 1 2
 let _ = f ## 1 2
 
 (* object concatenation (experimental) *)
@@ -54,6 +54,12 @@ let ab = concat ## (object method a = () end) (object method b = () end)
 let abc =
   concat ## ab (object method c = () end)
 
+let abc' =
+  concat ## ab (object method c = () end)
+
+let _ =
+  concat ## (concat ## (object method a = () end) (object method b = () end)) (object method c = () end)
+
 let aabc = 
   concat ## (object method outer = ab end) (object method outer = object method c = () end end)
 
@@ -61,6 +67,8 @@ let duck =
   object
     method quack = "quack"
   end
+
+let x = 1
 
 let cow =
   object
